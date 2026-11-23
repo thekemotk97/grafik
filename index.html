@@ -44,6 +44,12 @@ button{cursor:pointer}
 :focus-visible{outline:2px solid var(--focus);outline-offset:2px}
 [hidden]{display:none!important}
 body.ro .edit-only{display:none!important}
+.sw{display:flex;align-items:center;justify-content:space-between;gap:14px;cursor:pointer}
+.sw b{display:block;font-size:17px}
+.sw input{appearance:none;-webkit-appearance:none;margin:0;width:52px;height:32px;border-radius:16px;background:var(--off);border:1px solid var(--line);position:relative;flex:none;transition:background .15s;cursor:pointer}
+.sw input::after{content:"";position:absolute;top:3px;left:3px;width:24px;height:24px;border-radius:50%;background:var(--surface);box-shadow:0 1px 3px rgba(0,0,0,.3);transition:transform .15s}
+.sw input:checked{background:var(--ink);border-color:var(--ink)}
+.sw input:checked::after{transform:translateX(20px)}
 
 .top{display:flex;align-items:center;justify-content:space-between;max-width:560px;margin:0 auto;padding:14px 18px 6px}
 .top h1{font-size:20px;font-weight:800;letter-spacing:-.01em;margin:0}
@@ -103,6 +109,7 @@ h3.sec{font-size:15px;font-weight:700;margin:28px 2px 8px;color:var(--muted)}
 .btn.ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}
 .btn.small{padding:8px 12px;font-size:14px;border-radius:10px}
 .btn.danger{background:transparent;border:1px solid var(--weekend);color:var(--ink)}
+.btn.danger-fill{background:var(--weekend);color:var(--on)}
 .btn:disabled{opacity:.4}
 .btn-row{display:flex;gap:10px;margin-top:16px}
 .btn-row .btn{flex:1}
@@ -506,6 +513,9 @@ const plDni=n=>n===1?'1 dzień':n+' dni';
 /* ---------- storage ---------- */
 let LS_KEY='grafik.v1';
 let READONLY=false;
+// tryb tylko do odczytu ustawiany na tym urządzeniu (nie synchronizuje się)
+let LOCKED=false; try{ LOCKED=localStorage.getItem('grafik.lock')==='1'; }catch(e){}
+function applyLock(){ document.body.classList.toggle('ro',READONLY||LOCKED); }
 function loadLocal(){ try{ const r=localStorage.getItem(LS_KEY); return r?sanitize(JSON.parse(r)):null; }catch(e){ return null; } }
 function saveLocal(){ try{ localStorage.setItem(LS_KEY,JSON.stringify(state)); }catch(e){} }
 function coverageText(){
@@ -592,7 +602,7 @@ function showTab(name){
   window.scrollTo(0,0);
 }
 function renderTab(n){ ({start:renderStart,grafik:renderGrafik,urlop:renderUrlop,import:renderImport,ust:renderSettings})[n](); }
-function renderAll(){ $('#whoBtn').textContent=READONLY?(state.name?state.name+' (podgląd)':'Podgląd'):(state.name||'Ustaw imię'); renderTab(currentTab); }
+function renderAll(){ $('#whoBtn').textContent=READONLY?(state.name?state.name+' (podgląd)':'Podgląd'):((LOCKED?'🔒 ':'')+(state.name||'Ustaw imię')); renderTab(currentTab); }
 
 /* ---------- START ---------- */
 function renderStart(){
@@ -784,7 +794,7 @@ function openDayRO(k){
   sh.querySelector('#dCancel').addEventListener('click',closeSheet);
 }
 function openDay(k){
-  if(READONLY){ openDayRO(k); return; }
+  if(READONLY||LOCKED){ openDayRO(k); return; }
   const d=fromKey(k), we=isWeekend(d), r=state.rows[k]||['','','',''];
   const cur=status(k), auto=autoStatus(k), ov=state.overrides[k]||'';
   const lab=we?['Weekend','Weekend II','Trzeci człowiek','Dyżur telefoniczny']:holidayName(k)?['Rano w święto','Rano w święto II','Rano w święto III','Rano w święto IV']:['Popołudnie','Popołudnie II','Trzeci człowiek','Dyżur telefoniczny'];
@@ -808,6 +818,17 @@ function openDay(k){
     const o=sh.querySelector('#dOv').value;
     if(o) state.overrides[k]=o; else delete state.overrides[k];
     commit(); closeSheet(); renderAll(); toast('Zapisano zmiany');
+  });
+}
+function confirmBox(title,text,okLabel,danger){
+  return new Promise(res=>{
+    const sh=$('#sheet');
+    sh.innerHTML='<div class="grip"></div><h2>'+esc(title)+'</h2>'+(text?'<p class="hint" style="font-size:15px">'+esc(text)+'</p>':'')+
+      '<div class="btn-row"><button type="button" class="btn ghost" id="cNo">Anuluj</button><button type="button" class="btn'+(danger?' danger-fill':'')+'" id="cYes">'+esc(okLabel||'Tak')+'</button></div>';
+    $('#sheetWrap').hidden=false;
+    let done=false; const fin=v=>{ if(done) return; done=true; closeSheet(); res(v); };
+    sh.querySelector('#cNo').addEventListener('click',()=>fin(false));
+    sh.querySelector('#cYes').addEventListener('click',()=>fin(true));
   });
 }
 function closeSheet(){ $('#sheetWrap').hidden=true; $('#sheet').innerHTML=''; }
@@ -863,8 +884,9 @@ function renderUrlop(){
     state.vacations.push({id:Math.random().toString(36).slice(2),from:f.value,to:t.value<f.value?f.value:t.value,note:el.querySelector('#vNote').value.trim()});
     commit(); renderAll(); toast('Dodano urlop, z puli '+plDni(c));
   });
-  el.querySelectorAll('[data-del]').forEach(b=>b.addEventListener('click',()=>{
-    if(b.dataset.armed!=='1'){ b.dataset.armed='1'; b.textContent='Na pewno?'; setTimeout(()=>{ if(b.isConnected){b.dataset.armed='';b.textContent='Usuń';} },3000); return; }
+  el.querySelectorAll('[data-del]').forEach(b=>b.addEventListener('click',async()=>{
+    const v=state.vacations.find(x=>x.id===b.dataset.del); if(!v) return;
+    if(!await confirmBox('Usunąć urlop '+fmtRange(v.from,v.to)+'?','Dni wrócą do puli urlopu.','Usuń',true)) return;
     state.vacations=state.vacations.filter(v=>v.id!==b.dataset.del); commit(); renderAll(); toast('Usunięto urlop, dni wróciły do puli');
   }));
 }
@@ -954,8 +976,20 @@ function renderSettings(){
      '<label class="f" for="sRestore" style="margin-top:16px">Albo wklej zawartość pliku</label><textarea class="inp" id="sRestore" style="min-height:80px" placeholder="typ;data;pole1;pole2;pole3;pole4"></textarea>'+
      '<div class="btn-row"><button type="button" class="btn ghost" id="sRestoreBtn">Importuj</button></div>'+
      '<div class="btn-row"><button type="button" class="btn danger" id="sWipeRows">Usuń cały grafik</button><button type="button" class="btn danger" id="sWipe">Usuń wszystkie dane</button></div></div></div>';
+  h+='<h3 class="sec">Tryb</h3><div class="card"><label class="sw"><span><b>Tylko do odczytu</b><span class="hint" style="display:block;margin-top:2px">'+
+     (READONLY?'Ta aplikacja pokazuje podgląd z linku, więc zawsze działa tylko do odczytu.':'Widzisz grafik, urlopy i wolne, ale nie da się nic zmienić ani dodać. Dotyczy tylko tego urządzenia.')+
+     '</span></span><input type="checkbox" id="sLock"'+(READONLY||LOCKED?' checked':'')+(READONLY?' disabled':'')+'></label></div>';
   el.innerHTML=h;
   if(window.__bindSync) try{ window.__bindSync(el); }catch(e){}
+  const lk=el.querySelector('#sLock');
+  if(lk) lk.addEventListener('change',async()=>{
+    const want=lk.checked; lk.checked=!want;
+    const ok=await confirmBox(want?'Włączyć tryb tylko do odczytu?':'Wyłączyć tryb tylko do odczytu?',
+      want?'Nie będzie można nic zmieniać ani dodawać, dopóki go nie wyłączysz.':'Znów będzie można zmieniać grafik, urlopy i dane.',want?'Włącz':'Wyłącz');
+    if(!ok) return;
+    LOCKED=want; try{ localStorage.setItem('grafik.lock',LOCKED?'1':'0'); }catch(e){}
+    applyLock(); renderAll(); toast(LOCKED?'Włączono tryb tylko do odczytu':'Edycja znów jest możliwa');
+  });
   el.querySelectorAll('[data-name]').forEach(b=>b.addEventListener('click',()=>{el.querySelector('#sName').value=b.dataset.name; setName(b.dataset.name);}));
   el.querySelector('#sSave').addEventListener('click',()=>{const v=el.querySelector('#sName').value.trim(); if(!v){toast('Wpisz imię');return;} setName(v);});
   el.querySelectorAll('[data-theme-set]').forEach(b=>b.addEventListener('click',()=>{state.theme=b.dataset.themeSet; commit(); applyTheme(); renderSettings();}));
@@ -1002,9 +1036,9 @@ function renderSettings(){
     e.target.value='';
   });
   const ub=el.querySelector('#sUndo');
-  if(ub) arm(ub,()=>{ const x=readUndo(); if(!x) return; const s=sanitize(x.state); if(!s) return; try{localStorage.removeItem(UNDO_KEY);}catch(e){} state=s; commit(); applyTheme(); renderAll(); toast('Cofnięto zmiany'); });
-  arm(el.querySelector('#sWipeRows'),()=>{ snapshot('usunięcia grafiku'); state.rows={}; state.rowsClearedAt=Date.now(); state.overrides={}; commit(); renderAll(); toast('Usunięto grafik'); });
-  arm(el.querySelector('#sWipe'),()=>{ snapshot('usunięcia danych'); const th=state.theme; state=emptyState(); state.theme=th; state.rowsClearedAt=Date.now(); commit(); renderAll(); toast('Usunięto wszystkie dane'); });
+  if(ub) arm(ub,()=>{ const x=readUndo(); if(!x) return; const s=sanitize(x.state); if(!s) return; try{localStorage.removeItem(UNDO_KEY);}catch(e){} state=s; commit(); applyTheme(); renderAll(); toast('Cofnięto zmiany'); },'Aplikacja wróci do zapisanego wcześniej stanu, a późniejsze zmiany przepadną. Przy włączonej synchronizacji zmiana trafi też na twoje inne urządzenia i do podglądu.');
+  arm(el.querySelector('#sWipeRows'),()=>{ snapshot('usunięcia grafiku'); state.rows={}; state.rowsClearedAt=Date.now(); state.overrides={}; commit(); renderAll(); toast('Usunięto grafik'); },'Usuniesz wszystkie dni grafiku i ręczne zmiany. Urlopy i pula zostaną. Przy włączonej synchronizacji zmiana trafi też na twoje inne urządzenia i do podglądu.');
+  arm(el.querySelector('#sWipe'),()=>{ snapshot('usunięcia danych'); const th=state.theme; state=emptyState(); state.theme=th; state.rowsClearedAt=Date.now(); commit(); renderAll(); toast('Usunięto wszystkie dane'); },'Usuniesz grafik, zmiany, urlopy, pulę i imię. Przy włączonej synchronizacji zmiana trafi też na twoje inne urządzenia i do podglądu.');
 }
 /* ---------- CSV ---------- */
 function csvCell(v){ v=String(v==null?'':v); return /[;"\n\r]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v; }
@@ -1057,11 +1091,10 @@ function importCSV(text){
   });
   return ok?n:null;
 }
-function arm(btn,fn){
-  const orig=btn.textContent;
-  btn.addEventListener('click',()=>{
-    if(btn.dataset.armed!=='1'){ btn.dataset.armed='1'; btn.textContent='Dotknij ponownie'; setTimeout(()=>{ if(btn.isConnected){btn.dataset.armed='';btn.textContent=orig;} },3000); return; }
-    fn();
+function arm(btn,fn,text){
+  btn.addEventListener('click',async()=>{
+    const label=btn.textContent.trim();
+    if(await confirmBox(label+'?',text||'Tej operacji nie da się łatwo cofnąć.',label,true)) fn();
   });
 }
 
@@ -1211,14 +1244,14 @@ window.__syncCard=function(){
     h+='<div class="row-title">Połączono z GitHubem</div><div class="row-main" style="font-size:16px">Token ••••'+esc(tk.slice(-4))+'</div>'+
        '<p class="hint">'+st+'</p>'+
        '<div class="btn-row"><button type="button" class="btn" id="ghNow">Synchronizuj teraz</button></div>'+
-       '<label class="f" style="margin-top:20px">Dla żony</label><p class="hint" style="margin-top:0">Link do podglądu twojego grafiku. Nic w nim nie zmieni.</p>'+
+       '<label class="f" style="margin-top:20px">Link do podglądu</label><p class="hint" style="margin-top:0">Kto otworzy ten link, zobaczy twój grafik, ale nic w nim nie zmieni.</p>'+
        '<div class="btn-row"><button type="button" class="btn ghost" id="ghView"'+(sync.gistId?'':' disabled')+'>Wyślij link podglądu</button></div>'+
        '<label class="f" style="margin-top:20px">Twoje inne urządzenia</label><p class="hint" style="margin-top:0">Link, który od razu łączy drugie urządzenie z edycją. Zawiera twój token, więc wysyłaj go tylko sobie.</p>'+
        '<div class="btn-row"><button type="button" class="btn ghost" id="ghEdit">Wyślij link do mojego urządzenia</button></div>'+
        '<input class="inp" id="syncLinkOut" readonly hidden style="margin-top:10px">'+
        '<div class="btn-row"><button type="button" class="btn danger" id="ghOff">Rozłącz to urządzenie</button></div>';
   } else {
-    h+='<p class="hint" style="margin-top:0">Połącz aplikację z GitHubem, żeby grafik sam synchronizował się między twoimi urządzeniami, a żona miała go w podglądzie.</p>'+
+    h+='<p class="hint" style="margin-top:0">Połącz aplikację z GitHubem, żeby grafik sam synchronizował się między twoimi urządzeniami.</p>'+
        '<label class="f" for="ghToken">Token z GitHuba</label><input class="inp" id="ghToken" type="password" autocomplete="off" spellcheck="false" placeholder="ghp_…">'+
        (syncStatus.err?'<p class="hint">'+esc(syncStatus.msg)+'</p>':'')+
        '<div class="btn-row"><button type="button" class="btn" id="ghConnect">Połącz</button></div>'+
@@ -1253,7 +1286,7 @@ window.__bindSync=function(el){
     sync={}; saveSync(); syncStatus={busy:false,msg:'',err:false};
     if(wasView){ try{ localStorage.removeItem('grafik.view.v1'); }catch(x){} location.reload(); return; }
     toast('Rozłączono. Dane zostają na tym urządzeniu.'); renderAll();
-  });
+  },sync.mode==='view'?'Grafik zniknie z tego telefonu. Żeby go znów zobaczyć, potrzebny będzie nowy link.':'Dane zostaną na tym urządzeniu, ale przestaną się synchronizować.');
 };
 if(sync.mode) setTimeout(()=>runSync('start'),0);
 
@@ -1273,6 +1306,7 @@ document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&!$('#sheetWrap').h
 let lastDay=key(todayDate());
 document.addEventListener('visibilitychange',()=>{ if(!document.hidden&&key(todayDate())!==lastDay){ lastDay=key(todayDate()); renderAll(); } });
 
+applyLock();
 renderAll();
 initRemote();
 try{ if(navigator.storage&&navigator.storage.persist) navigator.storage.persist().catch(()=>{}); }catch(e){}
