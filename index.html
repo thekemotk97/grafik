@@ -820,14 +820,14 @@ function openDay(k){
     commit(); closeSheet(); renderAll(); toast('Zapisano zmiany');
   });
 }
-function confirmBox(title,text,okLabel,danger){
+function confirmBox(title,text,okLabel,danger,noCancel){
   return new Promise(res=>{
     const sh=$('#sheet');
     sh.innerHTML='<div class="grip"></div><h2>'+esc(title)+'</h2>'+(text?'<p class="hint" style="font-size:15px">'+esc(text)+'</p>':'')+
-      '<div class="btn-row"><button type="button" class="btn ghost" id="cNo">Anuluj</button><button type="button" class="btn'+(danger?' danger-fill':'')+'" id="cYes">'+esc(okLabel||'Tak')+'</button></div>';
+      '<div class="btn-row">'+(noCancel?'':'<button type="button" class="btn ghost" id="cNo">Anuluj</button>')+'<button type="button" class="btn'+(danger?' danger-fill':'')+'" id="cYes">'+esc(okLabel||'Tak')+'</button></div>';
     $('#sheetWrap').hidden=false;
     let done=false; const fin=v=>{ if(done) return; done=true; closeSheet(); res(v); };
-    sh.querySelector('#cNo').addEventListener('click',()=>fin(false));
+    if(!noCancel) sh.querySelector('#cNo').addEventListener('click',()=>fin(false));
     sh.querySelector('#cYes').addEventListener('click',()=>fin(true));
   });
 }
@@ -1116,13 +1116,17 @@ let syncStatus={busy:false,msg:'',err:false};
   if(!m) return;
   try{ history.replaceState(null,'',location.pathname+location.search); }catch(e){}
   if(m[1]==='podglad'){
-    if(sync.mode==='edit') return;
+    if(sync.mode==='edit'){
+      setTimeout(()=>confirmBox('To urządzenie ma edycję','Link podglądu nie zmienia urządzeń połączonych z twoim tokenem, żeby przypadkiem nie stracić edycji. Otwórz go na innym telefonie albo w oknie prywatnym przeglądarki, żeby zobaczyć, jak wygląda podgląd.','OK',false,true),400);
+      return;
+    }
     if(sync.mode!=='view'||sync.gistId!==m[2]) sync={mode:'view',gistId:m[2],seen:0};
   } else {
     sync={mode:'edit',token:m[2],gistId:sync.mode==='edit'?sync.gistId:'',seen:0};
   }
   saveSync();
 })();
+window.addEventListener('hashchange',()=>{ if(/^#(podglad|polacz)=/.test(location.hash)) location.reload(); });
 if(sync.mode==='view'){ READONLY=true; LS_KEY='grafik.view.v1'; document.body.classList.add('ro'); }
 
 async function gh(path,opt,token){
