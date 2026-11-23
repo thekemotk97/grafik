@@ -979,6 +979,7 @@ function renderSettings(){
   h+='<h3 class="sec">Tryb</h3><div class="card"><label class="sw"><span><b>Tylko do odczytu</b><span class="hint" style="display:block;margin-top:2px">'+
      (READONLY?'Ta aplikacja pokazuje podgląd z linku, więc zawsze działa tylko do odczytu.':'Widzisz grafik, urlopy i wolne, ale nie da się nic zmienić ani dodać. Dotyczy tylko tego urządzenia.')+
      '</span></span><input type="checkbox" id="sLock"'+(READONLY||LOCKED?' checked':'')+(READONLY?' disabled':'')+'></label></div>';
+  if(window.__appVersion) h+='<p class="hint" style="text-align:center;margin-top:18px">Wersja aplikacji: '+esc(window.__appVersion)+'</p>';
   el.innerHTML=h;
   if(window.__bindSync) try{ window.__bindSync(el); }catch(e){}
   const lk=el.querySelector('#sLock');
@@ -1099,6 +1100,7 @@ function arm(btn,fn,text){
 }
 
 /* ---------- start ---------- */
+window.__appVersion='2026.11.23-11';
 /* ---------- synchronizacja przez GitHub Gist ---------- */
 const GH_API='https://api.github.com';
 const GH_FILE='grafik.json';

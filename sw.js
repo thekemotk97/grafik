@@ -1,11 +1,11 @@
-const CACHE='grafik-v10';
+const CACHE='grafik-v11';
 const FILES=['./','index.html','manifest.webmanifest','icon-192.png','icon-512.png'];
 self.addEventListener('install',e=>{e.waitUntil(caches.open(CACHE).then(c=>c.addAll(FILES)));self.skipWaiting();});
 self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==CACHE).map(k=>caches.delete(k)))));self.clients.claim();});
 self.addEventListener('fetch',e=>{
   if(e.request.method!=='GET') return;
   e.respondWith(
-    fetch(e.request).then(r=>{
+    fetch(new URL(e.request.url).origin===location.origin?new Request(e.request.url,{cache:'no-cache',credentials:'same-origin'}):e.request).then(r=>{
       if(r&&r.ok&&(new URL(e.request.url).origin===location.origin||e.request.url.includes('fonts.g'))){const c=r.clone();caches.open(CACHE).then(x=>x.put(e.request,c));}
       return r;
     }).catch(()=>caches.match(e.request).then(m=>m||caches.match('index.html')))
