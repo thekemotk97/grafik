@@ -364,7 +364,7 @@ function parseSchedule(text){
 }
 
 /* ---------- state ---------- */
-function emptyState(){return {v:1,updatedAt:0,name:'',theme:'auto',rows:{},overrides:{},vacations:[],allowance:{}};}
+function emptyState(){return {v:1,updatedAt:0,name:'',theme:'auto',rows:{},overrides:{},vacations:[],allowance:{},remote:{}};}
 function sanitize(s){
   if(!s||typeof s!=='object') return null;
   const o=emptyState();
@@ -372,6 +372,7 @@ function sanitize(s){
   o.name=typeof s.name==='string'?s.name:'';
   o.theme=['auto','light','dark'].includes(s.theme)?s.theme:'auto';
   o.rowsClearedAt=+s.rowsClearedAt||0;
+  if(s.remote&&typeof s.remote==='object') for(const k in s.remote){ if(/^\d{4}-\d{2}-\d{2}$/.test(k)) o.remote[k]=s.remote[k]?1:0; }
   if(s.rows&&typeof s.rows==='object') for(const k in s.rows){ if(/^\d{4}-\d{2}-\d{2}$/.test(k)&&Array.isArray(s.rows[k])) o.rows[k]=[0,1,2,3].map(i=>String(s.rows[k][i]||'')); }
   if(s.overrides&&typeof s.overrides==='object') for(const k in s.overrides){ if(/^\d{4}-\d{2}-\d{2}$/.test(k)&&OVERRIDES.includes(s.overrides[k])) o.overrides[k]=s.overrides[k]; }
   if(s.allowance&&typeof s.allowance==='object') for(const y in s.allowance){ const v=Math.round(+s.allowance[y]); if(/^\d{4}$/.test(y)&&v>=0&&v<1000) o.allowance[y]=v; }
@@ -457,6 +458,7 @@ function statusRaw(k,f){
   return 'rano';
 }
 const autoStatus=k=>status(k,'o');
+const isRemote=k=>state.remote&&state.remote[k]===1;
 // czy ten dzień zabiera dzień z puli urlopu (normalnie byłby dniem pracy)
 const wouldWork=k=>!isWeekend(fromKey(k))&&['rano','popo','trzeci','dyzur','nodata'].includes(status(k,'v'));
 function vacCostIn(a,b){ let n=0; for(let d=fromKey(a);key(d)<=b;d=addDays(d,1)){ const k=key(d); if(status(k)==='urlop'&&wouldWork(k)) n++; } return n; }
@@ -547,6 +549,7 @@ function mergeStates(a,b){
   if(!(m.rowsClearedAt>b.updatedAt)) for(const k in b.rows) if(!m.rows[k]) m.rows[k]=b.rows[k].slice();
   for(const y in b.allowance) if(!(y in m.allowance)) m.allowance[y]=b.allowance[y];
   if(!(m.rowsClearedAt>b.updatedAt)) for(const k in b.overrides) if(!(k in m.overrides)) m.overrides[k]=b.overrides[k];
+  for(const k in b.remote) if(!(k in m.remote)) m.remote[k]=b.remote[k];
   b.vacations.forEach(v=>{ if(!m.vacations.some(x=>x.id===v.id||(x.from===v.from&&x.to===v.to))) m.vacations.push(Object.assign({},v)); });
   if(!m.name) m.name=b.name;
   m.updatedAt=Math.max(a.updatedAt,b.updatedAt);
@@ -622,7 +625,8 @@ function renderStart(){
   h+='<div class="hero s-'+st+'"><p class="hero-date">Dziś, '+WD_FULL[t.getDay()]+' '+t.getDate()+' '+MONTHS_GEN[t.getMonth()]+'</p>';
   h+='<h2 class="hero-word">'+esc(S.hero)+'</h2>';
   if(desc) h+='<p class="hero-desc">'+esc(desc)+'</p>';
-  h+='<p class="hero-next"><span>Jutro, '+WD_FULL[fromKey(tmK).getDay()]+'</span><b>'+esc(tm==='swieto'?'Wolne, '+holidayName(tmK):STATUS[tm].label)+'</b></p></div>';
+  if(isRemote(tk)) h+='<p class="hero-desc">🏠 Praca zdalna</p>';
+  h+='<p class="hero-next"><span>Jutro, '+WD_FULL[fromKey(tmK).getDay()]+'</span><b>'+esc(tm==='swieto'?'Wolne, '+holidayName(tmK):STATUS[tm].label)+(isRemote(tmK)?', zdalnie 🏠':'')+'</b></p></div>';
 
   // taśma
   h+='<div class="tape-wrap"><div class="tape">';
@@ -631,7 +635,7 @@ function renderStart(){
     if(i>0&&d.getDate()===1) h+='<span class="tape-month">'+MONTHS_SHORT[d.getMonth()]+'</span>';
     h+='<button type="button" class="tape-day s-'+s+(i===0?' today':'')+(holidayName(k)?' hol':'')+'" data-day="'+k+'" aria-label="'+esc(WD_FULL[d.getDay()]+' '+d.getDate()+' '+MONTHS_GEN[d.getMonth()]+': '+STATUS[s].label)+'">'+
       '<span class="tape-wd'+(isWeekend(d)?' we':'')+'">'+WD_MIN[d.getDay()]+'</span>'+
-      '<span class="tape-block">'+d.getDate()+'<small>'+esc(STATUS[s].short)+'</small></span></button>';
+      '<span class="tape-block">'+d.getDate()+'<small>'+esc(STATUS[s].short)+(isRemote(k)?'🏠':'')+'</small></span></button>';
   }
   h+='</div></div>';
 
@@ -740,10 +744,10 @@ function renderGrafik(){
   for(let d=1;d<=daysIn;d++){
     const dt=new Date(y,m,d), k=key(dt), s=status(k);
     cnt[s]=(cnt[s]||0)+1;
-    h+='<button type="button" class="cal-day s-'+s+(k===tk?' today':'')+(state.overrides[k]?' edited':'')+(holidayName(k)?' hol':'')+'" data-day="'+k+'" aria-label="'+esc(d+' '+MONTHS_GEN[m]+': '+STATUS[s].label)+'"><span class="n">'+d+'</span><span class="t">'+esc(STATUS[s].short)+'</span></button>';
+    h+='<button type="button" class="cal-day s-'+s+(k===tk?' today':'')+(state.overrides[k]?' edited':'')+(holidayName(k)?' hol':'')+'" data-day="'+k+'" aria-label="'+esc(d+' '+MONTHS_GEN[m]+': '+STATUS[s].label)+'"><span class="n">'+d+'</span><span class="t">'+esc(STATUS[s].short)+(isRemote(k)?' 🏠':'')+'</span></button>';
   }
   h+='</div>';
-  h+='<div class="legend">'+['rano','popo','weekend','dyzur','wolne','swieto','urlop','off'].map(s=>'<span class="s-'+s+'"><i></i>'+STATUS[s].label+'</span>').join('')+'<span class="star"><i>★</i>dzień świąteczny</span><span class="edited-dot"><i></i>zmienione ręcznie</span></div>';
+  h+='<div class="legend">'+['rano','popo','weekend','dyzur','wolne','swieto','urlop','off'].map(s=>'<span class="s-'+s+'"><i></i>'+STATUS[s].label+'</span>').join('')+'<span class="star"><i>★</i>dzień świąteczny</span><span class="star"><i>🏠</i>praca zdalna</span><span class="edited-dot"><i></i>zmienione ręcznie</span></div>';
 
   const st=[['popo','popołudniówki'],['weekend','dni weekendowe'],['dyzur','dni dyżuru'],['wolne','dni wolne za weekend'],['swieto','wolne w święta'],['urlop','dni urlopu']].filter(x=>cnt[x[0]]);
   if(st.length) h+='<div class="stats">'+st.map(x=>'<div class="stat s-'+x[0]+'"><i></i><b>'+cnt[x[0]]+'</b>'+x[1]+'</div>').join('')+'</div>';
@@ -789,6 +793,7 @@ function openDayRO(k){
   h+='<span class="pill s-'+cur+'">'+esc(cur==='swieto'?'Wolne, '+hol:STATUS[cur].label)+'</span>'+(hol&&cur!=='swieto'?' <span class="hint">'+esc(hol)+'</span>':'');
   const parts=r?r.map((c,i)=>c?'<div><span class="row-title">'+lab[i]+'</span><div class="row-main" style="font-size:16px">'+esc(c)+'</div></div>':'').filter(Boolean):[];
   h+='<div class="grid2" style="margin-top:16px">'+(parts.length?parts.join(''):'<p class="hint" style="margin:0">Nikt nie jest wpisany.</p>')+'</div>';
+  if(isRemote(k)) h+='<p class="hero-desc" style="margin-top:14px">🏠 Praca zdalna</p>';
   h+='<div class="btn-row"><button type="button" class="btn ghost" id="dCancel">Zamknij</button></div>';
   const sh=$('#sheet'); sh.innerHTML=h; $('#sheetWrap').hidden=false;
   sh.querySelector('#dCancel').addEventListener('click',closeSheet);
@@ -806,6 +811,7 @@ function openDay(k){
   h+='<option value="">Według grafiku ('+esc(auto==='swieto'?'święto':STATUS[auto].label.toLowerCase())+')</option>';
   OVERRIDES.forEach(o=>h+='<option value="'+o+'"'+(ov===o?' selected':'')+'>'+STATUS[o].label+'</option>');
   h+='</select>';
+  h+='<label class="check"><input type="checkbox" id="dRemote"'+(isRemote(k)?' checked':'')+'><span>🏠 Praca zdalna</span></label>';
   h+='<label class="f" style="margin-top:18px">Grafik zespołu</label><datalist id="nameList">'+names.map(n=>'<option value="'+esc(n)+'">').join('')+'</datalist>';
   h+='<div class="grid2">'+lab.map((l,i)=>'<div><label class="f" for="dC'+i+'" style="margin:0 0 4px;font-weight:500">'+l+'</label><input class="inp" id="dC'+i+'" list="nameList" autocomplete="off" value="'+esc(r[i])+'"></div>').join('')+'</div>';
   h+='<p class="hint">'+(hol&&!we?'To święto: kto jest tu wpisany, ma zmianę poranną, reszta ma wolne. ':'')+'Zamieniasz się z kimś? Wpisz swoje imię w miejsce kolegi, a aplikacja sama przeliczy zmiany i wolne po weekendzie.</p>';
@@ -815,6 +821,8 @@ function openDay(k){
   sh.querySelector('#dSave').addEventListener('click',()=>{
     const vals=[0,1,2,3].map(i=>sh.querySelector('#dC'+i).value.trim());
     if(state.rows[k]||vals.some(Boolean)) state.rows[k]=vals;
+    const rm=sh.querySelector('#dRemote').checked;
+    if(rm) state.remote[k]=1; else if(k in state.remote) state.remote[k]=0;
     const o=sh.querySelector('#dOv').value;
     if(o) state.overrides[k]=o; else delete state.overrides[k];
     commit(); closeSheet(); renderAll(); toast('Zapisano zmiany');
@@ -1050,6 +1058,7 @@ function toCSV(bom){
   Object.keys(state.allowance).sort().forEach(y=>L.push(['pula',y,String(state.allowance[y]),'','','']));
   Object.keys(state.rows).sort().forEach(k=>L.push(['grafik',k].concat(state.rows[k])));
   Object.keys(state.overrides).sort().forEach(k=>L.push(['zmiana',k,state.overrides[k],'','','']));
+  Object.keys(state.remote).sort().forEach(k=>L.push(['zdalna',k,String(state.remote[k]),'','','']));
   state.vacations.slice().sort((a,b)=>a.from.localeCompare(b.from)).forEach(v=>L.push(['urlop',v.from,v.to,v.note,'','']));
   return (bom?'\ufeff':'')+L.map(r=>r.map(csvCell).join(';')).join('\r\n')+'\r\n';
 }
@@ -1084,6 +1093,7 @@ function importCSV(text){
     if(!ISO.test(d)) return;
     if(t==='grafik'){ state.rows[d]=[2,3,4,5].map(i=>(r[i]||'').trim()); n.grafik++; ok=true; }
     else if(t==='zmiana'&&OVERRIDES.includes(v2)){ state.overrides[d]=v2; n.zmiana++; ok=true; }
+    else if(t==='zdalna'){ state.remote[d]=v2==='1'?1:0; ok=true; }
     else if(t==='urlop'&&ISO.test(v2)){
       const to=v2<d?d:v2;
       if(!state.vacations.some(v=>v.from===d&&v.to===to)) state.vacations.push({id:Math.random().toString(36).slice(2),from:d,to,note:(r[3]||'').trim()});
@@ -1100,7 +1110,7 @@ function arm(btn,fn,text){
 }
 
 /* ---------- start ---------- */
-window.__appVersion='2026.11.23-11';
+window.__appVersion='2026.11.23-12';
 /* ---------- synchronizacja przez GitHub Gist ---------- */
 const GH_API='https://api.github.com';
 const GH_FILE='grafik.json';
